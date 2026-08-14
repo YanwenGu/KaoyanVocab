@@ -46,8 +46,12 @@ async def block_foreign_origins(request: Request, call_next):
     CORS alone only stops the *browser* from reading responses; a malicious
     page could still trigger server-side side effects (e.g. POST /api/words,
     which spends DeepSeek API credits). This middleware rejects such requests
-    with 403 before they reach any handler. Requests without an Origin header
-    (curl, the browser extension via host_permissions) pass through.
+    with 403 before they reach any handler. Allowed origins:
+      - "null"   → pages opened via file://
+      - http(s)://127.0.0.1 or localhost → local dev pages
+      - chrome-extension:// or moz-extension:// → browser extension service
+        workers (web content cannot spoof these schemes, so this is safe)
+    Requests without an Origin header (curl, same-origin) pass through.
     """
     origin = request.headers.get("origin")
     if origin:
@@ -56,8 +60,11 @@ async def block_foreign_origins(request: Request, call_next):
             try:
                 parsed = urlparse(origin)
                 allowed = (
-                    parsed.scheme in ("http", "https")
-                    and parsed.hostname in ("127.0.0.1", "localhost")
+                    (
+                        parsed.scheme in ("http", "https")
+                        and parsed.hostname in ("127.0.0.1", "localhost")
+                    )
+                    or parsed.scheme in ("chrome-extension", "moz-extension")
                 )
             except ValueError:
                 allowed = False

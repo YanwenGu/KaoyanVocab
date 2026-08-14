@@ -22,7 +22,7 @@ tail -f server.log               # watch logs
 
 Three components, no build tools:
 
-- **`main.py`** — FastAPI backend. Uses `lifespan` context manager to run `init_db()` on startup. SQLite auto-creates `vocab_data.db`. CORS allows `*` so the file:// HTML page can call localhost.
+- **`main.py`** — FastAPI backend. Uses `lifespan` context manager to run `init_db()` on startup. SQLite auto-creates `vocab_data.db`. CORS restricted to `null` (file:// pages), localhost, and browser-extension origins; an Origin-checking middleware hard-403s all other origins (CSRF / API-credit abuse guard).
 - **`index.html`** — Pure HTML/JS/CSS frontend. No frameworks. Fetches from `http://127.0.0.1:8000`. PDF export via CSS `@media print` + browser's Cmd+P.
 - **`browser-extension/`** — Chrome Manifest V3 extension. Adds right-click context menu to collect selected English text from any webpage. Injects a toast notification on success/failure. Install via `chrome://extensions` → "Load unpacked".
 
