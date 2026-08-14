@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "考研词汇收藏",
+  "version": "1.0",
+  "description": "选中英文单词，右键一键收藏到考研词汇本",
+  "permissions": ["contextMenus", "scripting", "activeTab"],
+  "host_permissions": ["http://127.0.0.1:8000/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
