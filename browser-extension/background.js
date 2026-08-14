@@ -21,27 +21,39 @@ function showToast(tabId, type, word, detail) {
   chrome.scripting.executeScript({
     target: { tabId },
     func: (bg, icon, title, msg, keep) => {
-      const existing = document.getElementById('__vocab_toast__');
-      if (existing) {
-        const iconEl = existing.querySelector('span');
-        const titleEl = existing.querySelector('b');
-        const msgEl = existing.querySelector('span:last-child');
+      let toast = document.getElementById('__vocab_toast__');
+      let styleEl = document.getElementById('__vocab_toast_style__');
+
+      // Schedule auto-hide only for non-loading states. Loading toasts persist
+      // until replaced by the success/error toast below.
+      const scheduleHide = (el) => {
+        if (el.__hideTimer) clearTimeout(el.__hideTimer);
+        if (el.__fadeTimer) clearTimeout(el.__fadeTimer);
+        el.__hideTimer = setTimeout(() => {
+          el.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+          el.style.opacity = '0';
+          el.style.transform = 'translateX(20px)';
+          el.__fadeTimer = setTimeout(() => {
+            el.remove();
+            if (styleEl) styleEl.remove();
+          }, 300);
+        }, 2500);
+      };
+
+      if (toast) {
+        // Reuse the existing toast: swap content + color, keep while loading.
+        const iconEl = toast.querySelector('span');
+        const titleEl = toast.querySelector('b');
+        const msgEl = toast.querySelector('span:last-child');
         if (iconEl) iconEl.textContent = icon;
         if (titleEl) titleEl.textContent = title;
         if (msgEl) msgEl.textContent = msg;
-        existing.style.background = bg;
-        if (!keep) {
-          setTimeout(() => {
-            existing.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-            existing.style.opacity = '0';
-            existing.style.transform = 'translateX(20px)';
-            setTimeout(() => { existing.remove(); }, 300);
-          }, 2500);
-        }
+        toast.style.background = bg;
+        if (!keep) scheduleHide(toast);
         return;
       }
 
-      const toast = document.createElement('div');
+      toast = document.createElement('div');
       toast.id = '__vocab_toast__';
       toast.innerHTML = `<span style="font-size:18px;margin-right:8px">${icon}</span><div><b>${title}</b><br><span style="font-size:13px;opacity:0.9">${msg}</span></div>`;
       Object.assign(toast.style, {
@@ -64,17 +76,15 @@ function showToast(tabId, type, word, detail) {
         pointerEvents: 'none'
       });
 
-      const style = document.createElement('style');
-      style.textContent = '@keyframes __vocab_slide__ { from { opacity:0; transform:translateX(20px) } to { opacity:1; transform:translateX(0) } }';
-      document.head.appendChild(style);
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = '__vocab_toast_style__';
+        styleEl.textContent = '@keyframes __vocab_slide__ { from { opacity:0; transform:translateX(20px) } to { opacity:1; transform:translateX(0) } }';
+        document.head.appendChild(styleEl);
+      }
       document.body.appendChild(toast);
 
-      setTimeout(() => {
-        toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateX(20px)';
-        setTimeout(() => { toast.remove(); style.remove(); }, 300);
-      }, 2500);
+      if (!keep) scheduleHide(toast);
     },
     args: [bg, icon, title, msg, type === 'loading']
   }).catch(() => {});
