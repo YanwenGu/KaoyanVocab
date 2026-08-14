@@ -926,19 +926,105 @@
   }
   .fc-num-btn:active { transform: scale(0.97); }
 
-  /* ── Print ── */
+  /* ── Print (PDF export) ── */
+  .print-header, .print-footer { display: none; }
+
   @media print {
+    @page { size: A4; margin: 15mm 13mm 16mm; }
+
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+    body { padding: 0; margin: 0; background: #fff; background-image: none; color: #1d1d1f; }
     .no-print, .btn-delete, .btn-star, .btn-speak, .btn-bookmark { display: none !important; }
-    tr.row-important td { background-color: #fffde0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    tr.row-bookmarked td { border-left: none !important; }
-    body { padding: 0; margin: 0; background: #fff; background-image: none; }
-    table { width: 100%; border-collapse: collapse; }
+
+    /* ── Print-only header: title + meta ── */
+    .print-header {
+      display: block;
+      margin-bottom: 10pt;
+      padding-bottom: 8pt;
+      border-bottom: 2pt solid var(--accent);
+    }
+    .print-header .ph-title { font-size: 17pt; font-weight: 700; letter-spacing: 0.5px; }
+    .print-header .ph-meta { font-size: 9pt; color: #6e6e73; margin-top: 2pt; }
+
+    /* ── Print-only footer — repeats on every page ── */
+    .print-footer {
+      display: flex;
+      justify-content: space-between;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      padding: 4pt 2pt 0;
+      background: #fff;
+      border-top: 0.5pt solid #d2d2d7;
+      font-size: 8.5pt;
+      color: #86868b;
+    }
+    .pf-page::after { content: "第 " counter(page) " 页"; }
+
+    /* ── Table ── */
     .table-wrapper { box-shadow: none; border: none; border-radius: 0; overflow: visible; }
-    th, td { border: 1pt solid #000; padding: 10px; }
-    tr { page-break-inside: avoid; page-break-after: auto; }
-    * { color: #000 !important; }
-    th { background: #eee; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    table { width: 100%; border-collapse: collapse; }
+    thead { display: table-header-group; }
+    th, td { border: none; }
+    th {
+      background: #f5f5f7;
+      font-size: 9pt;
+      font-weight: 600;
+      color: #1d1d1f;
+      text-align: left;
+      padding: 6pt 8pt;
+      border-bottom: 1.5pt solid var(--accent);
+    }
+    td {
+      padding: 5.5pt 8pt;
+      font-size: 10pt;
+      vertical-align: top;
+      line-height: 1.45;
+      border-bottom: 0.5pt solid #e8e8ed;
+    }
+    tbody tr:nth-child(even) td { background: #fafafc; }
+
+    /* Column widths */
+    th.col-word { width: 17%; }
+    th.col-meaning { width: 31%; }
+    th.col-examples { width: 34%; }
+    th.col-derivatives { width: 18%; }
+
+    /* Hide tracking columns (time / bookmark / action) */
+    th.col-time, td.col-time,
+    th.col-bookmark, td.col-bookmark,
+    th.col-action, td.col-action { display: none; }
+
+    /* Word cell */
+    td:first-child .word-expression { font-size: 11pt; font-weight: 600; }
+    td:first-child .word-pos { font-size: 8pt; color: var(--accent); font-weight: 600; margin-left: 4px; }
+
+    /* Meaning */
+    .meaning-cell { font-size: 10pt; }
     .meaning-cell.hidden { filter: none !important; cursor: default; }
+
+    /* Examples */
+    .example-en { font-style: italic; color: #333; font-size: 9.5pt; margin-bottom: 2pt; }
+    .example-cn { color: #555; font-size: 9pt; }
+
+    /* Derivatives — inline plain text instead of pills */
+    .derivative-tag {
+      display: inline;
+      background: none !important;
+      padding: 0;
+      margin: 0 8px 0 0;
+      font-size: 9pt;
+      color: #444;
+    }
+    .derivative-pos { color: #86868b; margin: 0 2px; }
+    .derivative-meaning { color: #666; }
+
+    /* Important rows keep their yellow tint */
+    tr.row-important td { background: #fffbe6 !important; }
+    tr.row-bookmarked td { border-left: none !important; }
+
+    /* Pagination: keep rows intact, repeat thead on each page */
+    tr { page-break-inside: avoid; page-break-after: auto; }
     .editable-cell .edit-input, .editable-cell .edit-textarea, .edit-hint { display: none !important; }
   }
 
@@ -952,6 +1038,12 @@
 </style>
 </head>
 <body>
+
+<!-- Print-only header (shown only in PDF export) -->
+<div class="print-header">
+  <div class="ph-title">考研英语词汇收藏</div>
+  <div class="ph-meta">共 <span id="printCount">0</span> 条 · 导出时间：<span id="printDate"></span></div>
+</div>
 
 <div class="header no-print">
   <h1>考研英语词汇收藏</h1>
@@ -980,7 +1072,7 @@
       <button class="btn-ghost" onclick="exportWords()" title="导出 JSON 备份">⬇ 导出数据</button>
       <button class="btn-ghost" onclick="document.getElementById('importFile').click()" title="从 JSON 备份导入">⬆ 导入</button>
       <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importWords(this)">
-      <button class="btn-ghost" onclick="window.print()">导出 PDF</button>
+      <button class="btn-ghost" onclick="printPage()">导出 PDF</button>
       <button class="btn-jump-bookmark" id="btnJumpBookmark" onclick="jumpToBookmark()" disabled title="跳转至书签">📌 跳转至书签</button>
     </div>
   </div>
@@ -1178,7 +1270,7 @@ function renderRow(w) {
       <div class="example-cn editable-cell" data-id="${w.id}" data-field="example_cn" data-original="${escapeHtml(w.example_cn)}">${escapeHtml(w.example_cn)}</div>
     </td>
     <td class="editable-cell" data-id="${w.id}" data-field="derivatives" data-original="${derivJSON}">${derivHtml || ''}</td>
-    <td><span class="time-text">${formatTime(w.created_at)}</span></td>
+    <td class="col-time"><span class="time-text">${formatTime(w.created_at)}</span></td>
     <td class="col-bookmark">
       <button class="${bmClass}" onclick="toggleBookmark(${w.id}, this)" title="${isBookmarked ? '取消书签' : '设置书签'}">📌${bmTimeHtml}</button>
     </td>
@@ -2289,11 +2381,24 @@ async function importWords(fileInput) {
   reader.readAsText(file);
 }
 
+function printPage() {
+  // Fill the print-only header with stats, then open the print dialog.
+  const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => r.style.display !== 'none' && r.id !== 'skeletonRow');
+  document.getElementById('printCount').textContent = rows.length;
+  document.getElementById('printDate').textContent =
+    new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+  window.print();
+}
+
 loadWords();
 if (!importantOnly) {
   setInterval(checkNewWords, 1000);
 }
 setTimeout(updateJumpButton, 500);
 </script>
+<div class="print-footer">
+  <span>考研英语词汇 · 复习打印版</span>
+  <span class="pf-page"></span>
+</div>
 </body>
 </html>
