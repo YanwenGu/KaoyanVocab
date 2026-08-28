@@ -75,7 +75,7 @@ MIMO_MODEL=mimo-v2.5                               # 可选
 
 - **录入单词**：复制单词，粘贴到输入框，按回车 → AI 自动补全词条
 - **录入词组**：粘贴词组（如 `take it for granted`），点「收藏」按钮直接录入（跳过拼写检查）
-- **右键划词**：`chrome://extensions` → 开启开发者模式 → 加载 `browser-extension/` 文件夹
+- **右键划词**：`chrome://extensions` → 开启开发者模式 → 加载 `browser-extension/` 文件夹（详细安装步骤见 [使用说明.md](使用说明.md)）
 - **翻译来源**：页面上方可切换 DeepSeek / MiMo 快速 / MiMo 深度思考，浏览器扩展自动跟随
 - **导出 PDF**：点「导出PDF」→ Cmd+P → 保存为 PDF → 打印
 
