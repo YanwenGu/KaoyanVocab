@@ -16,6 +16,9 @@ open http://127.0.0.1:8000       # open frontend in browser (served by the backe
 # Or use the restart script (kills existing process, starts in background, logs to server.log, opens the browser):
 bash restart.sh
 tail -f server.log               # watch logs
+
+# Windows 11: double-click start.bat (or run start-server.ps1) — checks Python/deps,
+# kills whatever listens on port 8000, starts the server minimized, opens the browser.
 ```
 
 Opening the frontend at `http://127.0.0.1:8000` makes API calls same-origin. Opening `index.html` via `file://` still works too (CORS still allows the `null` origin).

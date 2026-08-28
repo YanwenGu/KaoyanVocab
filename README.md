@@ -33,6 +33,19 @@ open http://127.0.0.1:8000
 bash restart.sh
 ```
 
+### Windows 11
+
+直接双击 **`start.bat`** 即可。脚本会自动完成：
+
+1. 检查 Python 3（未安装会提示，自动过滤 Microsoft Store 的 python 占位程序）
+2. 缺少依赖时自动 `pip install -r requirements.txt`
+3. 杀掉占用 8000 端口的旧服务
+4. 后台启动服务（日志写入 `server.log`，超过 5MB 自动轮转备份）
+5. 打开浏览器访问 `http://127.0.0.1:8000`
+
+> 首次使用请先复制 `.env.example` 为 `.env` 并填入 API Key。
+> 命令行方式：`powershell -NoProfile -ExecutionPolicy Bypass -File start-server.ps1`
+
 ## .env 配置
 
 ```
@@ -43,7 +56,7 @@ MIMO_BASE_URL=https://api.xiaomimimo.com           # 可选
 MIMO_MODEL=mimo-v2.5                               # 可选
 ```
 
-> `.env` 已被 gitignore，请勿提交。
+> `.env` 已被 gitignore，请勿提交。可参考仓库中的 `.env.example` 模板。
 
 ## 使用方式
 
