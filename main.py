@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import requests
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -17,7 +17,37 @@ load_dotenv()
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 
+# Xiaomi MiMo (OpenAI-compatible). BASE_URL is the origin; /v1/chat/completions is appended.
+MIMO_API_KEY = os.getenv("MIMO_API_KEY")
+MIMO_BASE_URL = os.getenv("MIMO_BASE_URL", "https://api.xiaomimimo.com")
+MIMO_MODEL = os.getenv("MIMO_MODEL", "mimo-v2.5")
+
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vocab_data.db")
+PROVIDER_STATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "provider_state.json")
+
+VALID_PROVIDERS = {"deepseek", "mimo", "mimo-fast"}
+
+
+def _load_active_provider() -> str:
+    """Load the last-selected provider from disk so the browser extension and
+    the web UI stay in sync even after a server restart. Falls back to deepseek."""
+    try:
+        with open(PROVIDER_STATE_PATH, "r", encoding="utf-8") as f:
+            p = json.load(f).get("provider", "deepseek")
+        return p if p in VALID_PROVIDERS else "deepseek"
+    except (OSError, json.JSONDecodeError):
+        return "deepseek"
+
+
+def _save_active_provider(provider: str) -> None:
+    try:
+        with open(PROVIDER_STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump({"provider": provider}, f)
+    except OSError:
+        pass  # non-fatal: the in-memory value still applies for this process
+
+
+_active_provider = _load_active_provider()
 
 session = requests.Session()
 
@@ -224,34 +254,70 @@ def init_db():
         conn.commit()
 
 
-def call_deepseek(system_prompt: str, user_message: str) -> dict:
-    """Call DeepSeek with retry + exponential backoff for transient failures.
+def _strip_markdown_fences(content: str) -> str:
+    """Defensively strip ```json fences and surrounding whitespace if present."""
+    content = (content or "").strip()
+    if content.startswith("```"):
+        first_newline = content.find("\n")
+        if first_newline != -1:
+            content = content[first_newline + 1:]
+        if content.rstrip().endswith("```"):
+            content = content.rstrip()[:-3].rstrip()
+    return content
+
+
+def call_llm(system_prompt: str, user_message: str, provider: str = "deepseek") -> dict:
+    """Call the configured LLM provider (DeepSeek or Xiaomi MiMo) with retry
+    + exponential backoff for transient failures.
+
+    Both providers expose an OpenAI-compatible /v1/chat/completions endpoint
+    and support response_format json_object, so a single code path serves both.
 
     Retries up to 3 times total: rate-limit (429) and 5xx errors back off
     1s / 2s; malformed responses are retried once more with a 1s pause.
     """
+    provider = (provider or "deepseek").strip().lower()
+
+    payload = {
+        "model": MIMO_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"},
+    }
+
+    if provider in ("mimo", "mimo-v2.5", "mimo-v2.5-pro"):
+        base_url = MIMO_BASE_URL.rstrip("/")
+        api_key = MIMO_API_KEY
+        payload["thinking"] = {"type": "enabled"}  # deep thinking, higher quality but slow
+        timeout = 60
+    elif provider in ("mimo-fast", "mimo-flash", "mimo-fast-v2.5"):
+        base_url = MIMO_BASE_URL.rstrip("/")
+        api_key = MIMO_API_KEY
+        payload["thinking"] = {"type": "disabled"}  # no reasoning, much faster
+        timeout = 30
+    else:
+        base_url = DEEPSEEK_BASE_URL.rstrip("/")
+        api_key = DEEPSEEK_API_KEY
+        payload["model"] = "deepseek-v4-flash"
+        timeout = 20
+
     for attempt in range(3):
         try:
             resp = session.post(
-                f"{DEEPSEEK_BASE_URL}/v1/chat/completions",
+                f"{base_url}/v1/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
-                json={
-                    "model": "deepseek-v4-flash",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
-                    "temperature": 0.1,
-                    "response_format": {"type": "json_object"},
-                },
-                timeout=20,
+                json=payload,
+                timeout=timeout,
             )
             resp.raise_for_status()
             content = resp.json()["choices"][0]["message"]["content"]
-            return json.loads(content)
+            return json.loads(_strip_markdown_fences(content))
         except requests.RequestException as e:
             # Only retry transient HTTP errors (429 / 5xx); treat connect
             # failures and other request errors as terminal.
@@ -378,11 +444,41 @@ JSON Schema 定义必须严格符合以下两类情况：
 }"""
 
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+@app.get("/")
+def serve_index():
+    """Serve the frontend at http://127.0.0.1:8000 so no file:// open is needed."""
+    return FileResponse(os.path.join(BASE_DIR, "index.html"))
+
+
 class WordRequest(BaseModel):
     expression: str
     skip_spell_check: bool = False
     cached_analysis: dict | None = None
     raw_input: bool = False
+    provider: str | None = None  # None → use the active (shared) provider
+
+
+class ProviderRequest(BaseModel):
+    provider: str
+
+
+@app.get("/api/provider")
+def get_provider():
+    return {"provider": _active_provider}
+
+
+@app.post("/api/provider")
+def set_provider(req: ProviderRequest):
+    global _active_provider
+    p = (req.provider or "").strip().lower()
+    if p not in VALID_PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"无效的 provider，可选值: {sorted(VALID_PROVIDERS)}")
+    _active_provider = p
+    _save_active_provider(p)
+    return {"provider": p}
 
 
 def _find_duplicate(conn, expression: str):
@@ -623,7 +719,7 @@ def add_word(req: WordRequest):
     else:
         prompt = SYSTEM_PROMPT if req.skip_spell_check else UNIFIED_PROMPT
         try:
-            data = call_deepseek(prompt, expression)
+            data = call_llm(prompt, expression, req.provider or _active_provider)
         except requests.RequestException as e:
             raise HTTPException(status_code=502, detail=f"API 请求失败: {str(e)}")
         except (json.JSONDecodeError, KeyError) as e:
@@ -758,12 +854,12 @@ def toggle_important(word_id: int, req: ImportantRequest):
 
 
 @app.get("/api/suggest")
-def suggest(q: str):
+def suggest(q: str, provider: str | None = None):
     q = q.strip()
     if not q:
         return {"correct": True, "suggestions": []}
     try:
-        data = call_deepseek(SUGGEST_PROMPT, q)
+        data = call_llm(SUGGEST_PROMPT, q, provider or _active_provider)
         return {"correct": data.get("correct", True), "suggestions": data.get("suggestions", [])}
     except Exception:
         return {"correct": True, "suggestions": []}

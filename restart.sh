@@ -15,3 +15,6 @@ fi
 nohup python main.py > server.log 2>&1 &
 echo "Server started in background (PID: $!)"
 echo "Logs: tail -f server.log"
+echo "Opening http://127.0.0.1:8000 ..."
+sleep 1
+open http://127.0.0.1:8000

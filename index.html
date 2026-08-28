@@ -109,6 +109,30 @@
     border-radius: 13px;
     flex-shrink: 0;
   }
+  .toolbar-row-add .provider-select {
+    height: 46px;
+    padding: 0 14px;
+    font-size: 14px;
+    font-family: inherit;
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    outline: none;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2386868b' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+  .toolbar-row-add .provider-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(0,113,227,0.12);
+  }
 
   /* ── Actions row ── */
   .toolbar-row-actions {
@@ -247,6 +271,7 @@
   @media (max-width: 700px) {
     .toolbar-row-add { flex-direction: column; align-items: stretch; }
     .toolbar-row-add .btn-add { height: 44px; width: 100%; }
+    .toolbar-row-add .provider-select { height: 44px; width: 100%; }
   }
 
   /* ── Table ── */
@@ -738,6 +763,13 @@
     border-color: rgba(255,255,255,0.3);
     color: #fff;
   }
+  .flashcard-overlay.dark .fc-setup-hint {
+    background: rgba(255, 214, 10, 0.1);
+    border-color: rgba(255, 214, 10, 0.25);
+    color: #ffd60a;
+  }
+  .flashcard-overlay.dark .fc-setup-restart { color: rgba(255,255,255,0.45); }
+  .flashcard-overlay.dark .fc-setup-restart:hover { color: #fff; }
   .flashcard-overlay.dark .fc-progress-bar { background: rgba(255,255,255,0.08); }
   .flashcard-overlay.dark .fc-detail-card {
     background: rgba(255,255,255,0.06);
@@ -925,6 +957,29 @@
     color: var(--accent);
   }
   .fc-num-btn:active { transform: scale(0.97); }
+  .fc-setup-hint {
+    margin-bottom: 18px;
+    font-size: 15px;
+    color: var(--accent);
+    font-weight: 500;
+    background: rgba(0,113,227,0.08);
+    border: 1px solid rgba(0,113,227,0.2);
+    border-radius: 10px;
+    padding: 10px 16px;
+    display: inline-block;
+  }
+  .fc-setup-restart {
+    margin-top: 20px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .fc-setup-restart:hover { color: var(--accent); }
 
   /* ── Print (PDF export) ── */
   .print-header, .print-footer { display: none; }
@@ -1051,6 +1106,11 @@
 
 <div class="toolbar no-print">
   <div class="toolbar-row toolbar-row-add">
+    <select id="providerSelect" class="provider-select" title="翻译来源" aria-label="翻译来源">
+      <option value="deepseek">DeepSeek</option>
+      <option value="mimo-fast">MiMo V2.5 快速</option>
+      <option value="mimo">MiMo V2.5 深度思考</option>
+    </select>
     <input type="text" id="expressionInput" placeholder="粘贴单词或词组，回车即可录入..." lang="en" inputmode="latin" autofocus>
     <button class="btn-add" id="btnAdd" onclick="addWord()">收藏</button>
   </div>
@@ -1146,6 +1206,7 @@
     </div>
     <div class="fc-setup" id="fcSetup">
       <div class="fc-setup-title">选择本次背诵数量</div>
+      <div class="fc-setup-hint" id="fcSetupHint" style="display:none;"></div>
       <div class="fc-setup-buttons">
         <button class="fc-num-btn" onclick="startFlashcards(50)">50 个</button>
         <button class="fc-num-btn" onclick="startFlashcards(100)">100 个</button>
@@ -1153,6 +1214,7 @@
         <button class="fc-num-btn" onclick="startFlashcards(200)">200 个</button>
         <button class="fc-num-btn" onclick="startFlashcards(0)">全部</button>
       </div>
+      <button class="fc-setup-restart" id="fcSetupRestart" onclick="restartFcFromBeginning()" style="display:none;">↺ 从头开始</button>
     </div>
   </div>
 </div>
@@ -1173,8 +1235,34 @@ const suggestionList = document.getElementById('suggestionList');
 const useAsIsBtn = document.getElementById('useAsIs');
 const searchInput = document.getElementById('searchInput');
 const searchCount = document.getElementById('searchCount');
+const providerSelect = document.getElementById('providerSelect');
 
 let isAdding = false;
+
+// ── 翻译来源切换（DeepSeek / MiMo V2.5 快速 / MiMo V2.5 深度思考）──
+function getProvider() {
+  const v = localStorage.getItem('vocab_provider');
+  return ['mimo', 'mimo-fast'].includes(v) ? v : 'deepseek';
+}
+
+// 把当前选择的翻译来源同步到后端。后端把它作为共享状态，浏览器右键扩展依赖它保持一致。
+function syncProviderToServer() {
+  fetch(`${API}/api/provider`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: getProvider() }),
+  }).catch(() => {});
+}
+
+providerSelect.value = getProvider();
+providerSelect.addEventListener('change', () => {
+  localStorage.setItem('vocab_provider', providerSelect.value);
+  syncProviderToServer();
+  showToast(`翻译来源已切换为 ${providerSelect.options[providerSelect.selectedIndex].text}`);
+});
+
+// 页面加载时把本地的选择推给后端，保证后端重启后扩展仍与手动输入一致
+syncProviderToServer();
 
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') checkAndAdd();
@@ -1432,7 +1520,7 @@ async function checkAndAdd() {
     const resp = await fetch(`${API}/api/words`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expression, raw_input: true }),
+      body: JSON.stringify({ expression, raw_input: true, provider: getProvider() }),
     });
     if (!resp.ok) {
       const err = await resp.json();
@@ -1487,7 +1575,7 @@ async function doAddWord(expression, skipSpellCheck = false, cachedAnalysis = nu
     const resp = await fetch(`${API}/api/words`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expression, skip_spell_check: skipSpellCheck, cached_analysis: cachedAnalysis, raw_input: true }),
+      body: JSON.stringify({ expression, skip_spell_check: skipSpellCheck, cached_analysis: cachedAnalysis, raw_input: true, provider: getProvider() }),
     });
     if (!resp.ok) {
       const err = await resp.json();
@@ -1733,6 +1821,9 @@ tbody.addEventListener('dblclick', (e) => {
 
 // ── Flashcard / 背单词 ──
 let fcWords = [];
+let fcAllWords = [];     // full list (before count slicing) — used for bookmark continuation
+let fcMaxIndex = -1;     // furthest studied (revealed) index in the current session
+let fcStartIndex = 0;    // session start index in fcAllWords (bookmark resume position)
 let fcIndex = 0;
 let fcRevealed = false;
 let fcUnknownCount = 0;
@@ -1794,6 +1885,8 @@ async function openDailyReview() {
 
     isReviewMode = true;
     fcWords = dueWords;
+    fcAllWords = [];     // review mode must not affect the 背单词 bookmark logic
+    fcMaxIndex = -1;
     fcIndex = 0;
     fcRevealed = false;
     fcUnknownCount = 0;
@@ -1924,6 +2017,9 @@ function finishReviewSession() {
 }
 
 async function openFlashcards() {
+  fcAllWords = [];
+  fcMaxIndex = -1;
+  fcStartIndex = 0;
   try {
     const resp = await fetch(`${API}/api/words`);
     const words = await resp.json();
@@ -1940,23 +2036,64 @@ async function openFlashcards() {
       return;
     }
     fcWords = [...words];
+    fcAllWords = [...words];
+    // 书签定位：若书签单词仍在列表中，则本次从书签处继续
+    const bm = getBookmark();
+    if (bm) {
+      const idx = words.findIndex(w => w.id === bm.id);
+      if (idx >= 0) {
+        fcStartIndex = idx;
+      } else {
+        showToast('书签对应的单词已不在列表中，已从头开始');
+      }
+    }
     fcOverlay.classList.remove('hidden');
     fcCard.style.display = 'none';
     fcHint.style.display = 'none';
     fcEmpty.classList.remove('show');
     fcSetup.classList.add('show');
-    fcProgress.textContent = `共 ${fcWords.length} 个单词`;
-    fcStats.textContent = '';
+    renderFcSetup();
     document.body.style.overflow = 'hidden';
   } catch (e) {
     showToast('无法加载词汇列表，请确认后端已启动');
   }
 }
 
+// 更新背诵设置界面：显示书签继续提示与剩余数量
+function renderFcSetup() {
+  const hint = document.getElementById('fcSetupHint');
+  const restartBtn = document.getElementById('fcSetupRestart');
+  if (fcStartIndex > 0) {
+    const w = fcAllWords[fcStartIndex];
+    hint.textContent = `📌 从书签「${w.expression}」继续`;
+    hint.style.display = '';
+    restartBtn.style.display = '';
+    fcProgress.textContent = `共 ${fcAllWords.length} 个单词 · 书签处剩余 ${fcAllWords.length - fcStartIndex} 个`;
+  } else {
+    hint.textContent = '';
+    hint.style.display = 'none';
+    restartBtn.style.display = 'none';
+    fcProgress.textContent = `共 ${fcAllWords.length} 个单词`;
+  }
+}
+
+// 从头开始：放弃书签位置，本次从第一个单词背起
+function restartFcFromBeginning() {
+  fcStartIndex = 0;
+  renderFcSetup();
+  showToast('已重置，从头开始');
+}
+
 function startFlashcards(count) {
-  let selected = fcWords;
-  if (count > 0 && count < selected.length) {
-    selected = selected.slice(0, count);
+  let selected;
+  if (count > 0) {
+    selected = fcAllWords.slice(fcStartIndex, fcStartIndex + count);
+  } else {
+    selected = fcAllWords.slice(fcStartIndex); // 全部：从书签处到末尾
+  }
+  if (!selected.length) {
+    // 防御：书签位置之后没有单词（理论上不会发生）
+    selected = fcAllWords.slice(0, count || undefined);
   }
   fcWords = selected;
   fcIndex = 0;
@@ -1969,10 +2106,25 @@ function startFlashcards(count) {
 }
 
 function closeFlashcards() {
+  saveFcBookmark(); // auto-save bookmark at the next position after the last studied word
   fcOverlay.classList.add('hidden');
   document.body.style.overflow = '';
   isReviewMode = false;
   updateReviewBadge();
+}
+
+// 背单词退出时，自动把书签保存到最后一个背到的单词的下一个位置，
+// 方便下次继续背诵（仅背单词模式，不影响每日复习和手动书签）。
+function saveFcBookmark() {
+  if (isReviewMode) return;       // 仅背单词模式
+  if (fcMaxIndex < 0) return;     // 本次还没背过任何单词
+  // fcMaxIndex 是相对本次批次（fcWords）的索引，映射回全表位置后取下一个
+  const absIndex = fcStartIndex + fcMaxIndex;
+  const nextWord = fcAllWords[absIndex + 1];
+  if (!nextWord) return;          // 全部背完，没有下一个位置，不动书签
+  setBookmark(nextWord.id);
+  applyBookmarkUI();
+  showToast('书签已自动保存至下一个单词');
 }
 
 function toggleFcTheme() {
@@ -2009,6 +2161,7 @@ function showCard() {
 function revealCard(known) {
   if (fcRevealed) return;
   fcRevealed = true;
+  fcMaxIndex = Math.max(fcMaxIndex, fcIndex);
   const w = fcWords[fcIndex];
 
   fcWord.textContent = w.expression;
@@ -2240,37 +2393,44 @@ function formatBookmarkTime(ts) {
   return `${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// Sync the whole table's bookmark UI to the current bookmark in localStorage
+function applyBookmarkUI() {
+  tbody.querySelectorAll('tr.row-bookmarked').forEach(row => {
+    row.classList.remove('row-bookmarked');
+    const b = row.querySelector('.btn-bookmark');
+    if (b) {
+      b.classList.remove('active');
+      b.title = '设置书签';
+      b.innerHTML = '📌';
+    }
+  });
+  const bm = getBookmark();
+  if (bm) {
+    const row = tbody.querySelector(`tr[data-id="${bm.id}"]`);
+    if (row) {
+      row.classList.add('row-bookmarked');
+      const b = row.querySelector('.btn-bookmark');
+      if (b) {
+        b.classList.add('active');
+        b.title = '取消书签';
+        b.innerHTML = `📌<span class="bookmark-time">${formatBookmarkTime(bm.time)}</span>`;
+      }
+    }
+  }
+  updateJumpButton();
+}
+
 function toggleBookmark(id, btn) {
   const bm = getBookmark();
   if (bm && bm.id === id) {
-    // Remove bookmark
     clearBookmark();
-    btn.classList.remove('active');
-    btn.title = '设置书签';
-    btn.innerHTML = '📌';
-    btn.closest('tr').classList.remove('row-bookmarked');
+    applyBookmarkUI();
     showToast('已移除书签');
   } else {
-    // Remove old bookmark highlight
-    const oldRow = document.querySelector('tr.row-bookmarked');
-    if (oldRow) {
-      oldRow.classList.remove('row-bookmarked');
-      const oldBtn = oldRow.querySelector('.btn-bookmark');
-      if (oldBtn) {
-        oldBtn.classList.remove('active');
-        oldBtn.title = '设置书签';
-        oldBtn.innerHTML = '📌';
-      }
-    }
-    // Set new bookmark
-    const newBm = setBookmark(id);
-    btn.classList.add('active');
-    btn.title = '取消书签';
-    btn.innerHTML = `📌<span class="bookmark-time">${formatBookmarkTime(newBm.time)}</span>`;
-    btn.closest('tr').classList.add('row-bookmarked');
+    setBookmark(id);
+    applyBookmarkUI();
     showToast('已设置书签');
   }
-  updateJumpButton();
 }
 
 function updateJumpButton() {

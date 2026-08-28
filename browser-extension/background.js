@@ -1,5 +1,26 @@
 const API = 'http://127.0.0.1:8000';
 
+// 与主界面下拉框对应的模型显示名
+const PROVIDER_LABELS = {
+  'deepseek': 'DeepSeek',
+  'mimo': 'MiMo V2.5 深度思考',
+  'mimo-fast': 'MiMo V2.5 快速',
+};
+
+// 从后端获取当前共享的翻译来源（主界面切换后会自动同步到这里）
+async function getActiveProviderLabel() {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const resp = await fetch(`${API}/api/provider`, { signal: ctrl.signal });
+    clearTimeout(timer);
+    const data = await resp.json();
+    return PROVIDER_LABELS[data.provider] || data.provider || 'DeepSeek';
+  } catch {
+    return 'DeepSeek';
+  }
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'collect-word',
@@ -8,15 +29,16 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-function showToast(tabId, type, word, detail) {
+function showToast(tabId, type, word, detail, modelLabel) {
   const bg = type === 'loading' ? '#007aff' : type === 'success' ? '#34c759' : '#ff3b30';
   const icon = type === 'loading' ? '⏳' : type === 'success' ? '✓' : '✕';
   const title = type === 'loading' ? '正在提交...' : type === 'success' ? '已收藏' : '收藏失败';
+  const modelSuffix = modelLabel ? ` · ${modelLabel}` : '';
   const msg = type === 'loading'
-    ? `「${word}」正在添加到词汇本`
+    ? `「${word}」正在添加到词汇本${modelSuffix}`
     : type === 'success'
-      ? `「${word}」已添加到词汇本`
-      : (detail || '未知错误');
+      ? `「${word}」已添加到词汇本${modelSuffix}`
+      : `${detail || '未知错误'}${modelSuffix}`;
 
   chrome.scripting.executeScript({
     target: { tabId },
@@ -96,7 +118,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const word = info.selectionText.trim();
   if (!word) return;
 
-  showToast(tab.id, 'loading', word);
+  // 先取当前模型，再展示加载弹窗（本地请求，几乎无延迟）
+  const modelLabel = await getActiveProviderLabel();
+
+  showToast(tab.id, 'loading', word, null, modelLabel);
 
   try {
     const resp = await fetch(`${API}/api/words`, {
@@ -106,12 +131,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     });
 
     if (resp.ok) {
-      showToast(tab.id, 'success', word);
+      showToast(tab.id, 'success', word, null, modelLabel);
     } else {
       const err = await resp.json().catch(() => ({ detail: '请求失败' }));
-      showToast(tab.id, 'error', word, err.detail);
+      showToast(tab.id, 'error', word, err.detail, modelLabel);
     }
   } catch (e) {
-    showToast(tab.id, 'error', word, '无法连接到后端，请确认 python main.py 已启动');
+    showToast(tab.id, 'error', word, '无法连接到后端，请确认 python main.py 已启动', modelLabel);
   }
 });

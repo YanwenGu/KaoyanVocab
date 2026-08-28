@@ -6,6 +6,7 @@ vocab_data.db
 vocab_data.db.bak-*
 server.log
 server.log.1
+provider_state.json
 
 # Python
 __pycache__/
