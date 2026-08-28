@@ -6,6 +6,8 @@
 
 ![KaoyanVocab 界面预览](cover.png)
 
+📖 完整的使用说明请看：[使用说明.md](使用说明.md)
+
 ## 功能
 
 - **AI 词条补全** — DeepSeek / MiMo 自动补全词性、释义、中英文例句、派生词，并自动做**词形还原**（`running → run`，词组保留原形如 `take it for granted`）
