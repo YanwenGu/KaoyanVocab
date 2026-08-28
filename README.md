@@ -4,6 +4,8 @@
 
 做真题时复制生词 → 粘贴到网页（或浏览器右键划词）→ AI 自动补全释义、例句、派生词 → 存入本地 SQLite → 背单词 / 每日复习 → 周末导出 PDF 打印背诵。
 
+![KaoyanVocab 界面预览](cover.png)
+
 ## 功能
 
 - **AI 词条补全** — DeepSeek / MiMo 自动补全词性、释义、中英文例句、派生词，并自动做**词形还原**（`running → run`，词组保留原形如 `take it for granted`）
